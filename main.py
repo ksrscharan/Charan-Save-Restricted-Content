@@ -8,11 +8,8 @@ import os
 import threading
 import json
 
-with open('config.json', 'r') as f:
-    DATA = json.load(f)
-
-def getenv(var): 
-    return os.environ.get(var) or DATA.get(var, None)
+with open('config.json', 'r') as f: DATA = json.load(f)
+def getenv(var): return os.environ.get(var) or DATA.get(var, None)
 
 bot_token = getenv("TOKEN") 
 api_hash = getenv("HASH") 
@@ -21,42 +18,49 @@ bot = Client("mybot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
 
 ss = getenv("STRING")
 if ss is not None:
-    acc = Client("myacc" ,api_id=api_id, api_hash=api_hash, session_string=ss)
-    acc.start()
-else:
-    acc = None
-
-# Use a threading.Event to signal when the download/upload is complete
-download_event = threading.Event()
-upload_event = threading.Event()
+	acc = Client("myacc" ,api_id=api_id, api_hash=api_hash, session_string=ss)
+	acc.start()
+else: acc = None
 
 # download status
 def downstatus(statusfile,message):
-    # Wait until the download event is set before proceeding
-    download_event.wait()
-    with open(statusfile,"r") as downread:
-        txt = downread.read()
-        try:
-            bot.edit_message_text(message.chat.id, message.id, f"__Downloaded__ : **{txt}**")
-            time.sleep(10)
-        except Exception as e:
-            bot.edit_message_text(message.chat.id, message.id, f"Error updating download status: {e}")
+	while True:
+		if os.path.exists(statusfile):
+			break
+
+	time.sleep(3)      
+	while os.path.exists(statusfile):
+		with open(statusfile,"r") as downread:
+			txt = downread.read()
+		try:
+			bot.edit_message_text(message.chat.id, message.id, f"__Downloaded__ : **{txt}**")
+			time.sleep(10)
+		except:
+			time.sleep(5)
+
 
 # upload status
 def upstatus(statusfile,message):
-    download_event.wait()
-    with open(statusfile,"r") as upread:
-        txt = upread.read()
-        try:
-            bot.edit_message_text(message.chat.id, message.id, f"__Uploaded__ : **{txt}**")
-            time.sleep(10)
-        except Exception as e:
-            bot.edit_message_text(message.chat.id, message.id, f"Error updating upload status: {e}")
+	while True:
+		if os.path.exists(statusfile):
+			break
+
+	time.sleep(3)      
+	while os.path.exists(statusfile):
+		with open(statusfile,"r") as upread:
+			txt = upread.read()
+		try:
+			bot.edit_message_text(message.chat.id, message.id, f"__Uploaded__ : **{txt}**")
+			time.sleep(10)
+		except:
+			time.sleep(5)
+
 
 # progress writter
 def progress(current, total, message, type):
-    with open(f'{message.id}{type}status.txt',"w") as fileup:
-        fileup.write(f"{current * 100 / total:.1f}%")
+	with open(f'{message.id}{type}status.txt',"w") as fileup:
+		fileup.write(f"{current * 100 / total:.1f}%")
+
 
 # start command
 @bot.on_message(filters.command(["start"]))
@@ -143,59 +147,61 @@ def save(client: pyrogram.client.Client, message: pyrogram.types.messages_and_me
 
 # handle private
 def handle_private(message: pyrogram.types.messages_and_media.message.Message, chatid: int, msgid: int):
-	msg: pyrogram.types.messages_and_media.message.Message = acc.get_messages(chatid,msgid)
-	msg_type = get_message_type(msg)
-	
-	# IF TEXT
-	if "Text" == msg_type:
-		bot.send_message(message.chat.id, msg.text, entities=msg.entities, reply_to_message_id=message.id)
-		return
+		msg: pyrogram.types.messages_and_media.message.Message = acc.get_messages(chatid,msgid)
+		msg_type = get_message_type(msg)
 
-	smsg = bot.send_message(message.chat.id, '__Downloading__', reply_to_message_id=message.id)
-	dosta = threading.Thread(target=lambda:downstatus(f'{message.id}downstatus.txt',smsg),daemon=True)
-	dosta.start()
-	file = acc.download_media(msg, progress=progress, progress_args=[message,"down"])
-	os.remove(f'{message.id}downstatus.txt')
-download_event.set()
+		if "Text" == msg_type:
+			bot.send_message(message.chat.id, msg.text, entities=msg.entities, reply_to_message_id=message.id)
+			return
 
-upsta = threading.Thread(target=lambda:upstatus(f'{message.id}upstatus.txt',smsg),daemon=True)
-upsta.start()
+		smsg = bot.send_message(message.chat.id, '__Downloading__', reply_to_message_id=message.id)
+		dosta = threading.Thread(target=lambda:downstatus(f'{message.id}downstatus.txt',smsg),daemon=True)
+		dosta.start()
+		file = acc.download_media(msg, progress=progress, progress_args=[message,"down"])
+		os.remove(f'{message.id}downstatus.txt')
+
+		upsta = threading.Thread(target=lambda:upstatus(f'{message.id}upstatus.txt',smsg),daemon=True)
+		upsta.start()
 		
-if "Document" == msg_type:
-	try:
-		thumb = acc.download_media(msg.document.thumbs[0].file_id)
-	except: thumb = None
-	bot.send_document(message.chat.id, file, thumb=thumb, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])
-	if thumb != None: os.remove(thumb)
-elif "Video" == msg_type:
-	try: 
-			thumb = acc.download_media(msg.video.thumbs[0].file_id)
-	except: thumb = None
-
-	bot.send_video(message.chat.id, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height, thumb=thumb, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])
-	if thumb != None: os.remove(thumb)
-elif "Animation" == msg_type:
-		bot.send_animation(message.chat.id, file, reply_to_message_id=message.id)
-elif "Sticker" == msg_type:
-		bot.send_sticker(message.chat.id, file, reply_to_message_id=message.id)
-elif "Voice" == msg_type:
-		bot.send_voice(message.chat.id, file, caption=msg.caption, thumb=thumb, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])
-elif "Audio" == msg_type:
-		try:
-			thumb = acc.download_media(msg.audio.thumbs[0].file_id)
-		except: thumb = None
+		if "Document" == msg_type:
+			try:
+				thumb = acc.download_media(msg.document.thumbs[0].file_id)
+			except: thumb = None
 			
-		bot.send_audio(message.chat.id, file, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])   
-		if thumb != None: os.remove(thumb)
+			bot.send_document(message.chat.id, file, thumb=thumb, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])
+			if thumb != None: os.remove(thumb)
+
+		elif "Video" == msg_type:
+			try: 
+				thumb = acc.download_media(msg.video.thumbs[0].file_id)
+			except: thumb = None
+
+			bot.send_video(message.chat.id, file, duration=msg.video.duration, width=msg.video.width, height=msg.video.height, thumb=thumb, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])
+			if thumb != None: os.remove(thumb)
+
+		elif "Animation" == msg_type:
+			bot.send_animation(message.chat.id, file, reply_to_message_id=message.id)
+			   
+		elif "Sticker" == msg_type:
+			bot.send_sticker(message.chat.id, file, reply_to_message_id=message.id)
+
+		elif "Voice" == msg_type:
+			bot.send_voice(message.chat.id, file, caption=msg.caption, thumb=thumb, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])
+
+		elif "Audio" == msg_type:
+			try:
+				thumb = acc.download_media(msg.audio.thumbs[0].file_id)
+			except: thumb = None
+				
+			bot.send_audio(message.chat.id, file, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id, progress=progress, progress_args=[message,"up"])   
+			if thumb != None: os.remove(thumb)
+
 		elif "Photo" == msg_type:
-		    bot.send_photo(message.chat.id, file, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id)
+			bot.send_photo(message.chat.id, file, caption=msg.caption, caption_entities=msg.caption_entities, reply_to_message_id=message.id)
+
 		os.remove(file)
-		
-# Clear the upload event as uploading is finished
-upload_event.clear()
-if os.path.exists(f'{message.id}upstatus.txt'):
-    os.remove(f'{message.id}upstatus.txt')
-bot.delete_messages(message.chat.id,[smsg.id])
+		if os.path.exists(f'{message.id}upstatus.txt'): os.remove(f'{message.id}upstatus.txt')
+		bot.delete_messages(message.chat.id,[smsg.id])
 
 
 # get the type of message
