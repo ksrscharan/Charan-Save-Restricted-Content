@@ -1,92 +1,33 @@
-import pyrogram
-from pyrogram import Client, filters
-from pyrogram.errors import UserAlreadyParticipant, InviteHashExpired, UsernameNotOccupied
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+import re
+import pyrogram # You need to import the pyrogram module
 
-import time
-import os
-import threading
-import json
+# You need to define the acc variable and assign it a Client object
+acc = pyrogram.Client("my_account")
 
-# Load configuration from file
-with open('config.json', 'r') as f:
-    DATA = json.load(f)
+@bot.on_message(filters.text)
+def save(client: pyrogram.client.Client, message: pyrogram.types.messages_and_media.message.Message):
+    print(message.text)
 
-def getenv(var):
-    return os.environ.get(var) or DATA.get(var, None)
+    # joining chats
+    chat_link_pattern = r"https?://t\.me/[a-zA-Z0-9_]+"
+    chat_links = re.findall(chat_link_pattern, message.text)
 
-bot_token = getenv("TOKEN") 
-api_hash = getenv("HASH") 
-api_id = getenv("ID")
+    if len(chat_links) > 0:
+        if acc is None:
+            bot.send_message(message.chat.id, f"**String Session is not Set**", reply_to_message_id=message.id)
+            return
 
-bot = Client("mybot", api_id=api_id, api_hash=api_hash, bot_token=bot_token)
-acc = None
+        for chat_link in chat_links:
+            try:
+                # You need to use the acc variable instead of the client parameter
+                acc.join_chat(chat_link)
+                bot.send_message(message.chat.id, "**Chat Joined**", reply_to_message_id=message.id)
+            except UserAlreadyParticipant:
+                bot.send_message(message.chat.id, "**Chat already Joined**", reply_to_message_id=message.id)
+            except InviteHashExpired:
+                bot.send_message(message.chat.id, "**Invalid Link**", reply_to_message_id=message.id)
+            except Exception as e: # You need to handle other possible exceptions
+                bot.send_message(message.chat.id, f"**Error** : __{e}__", reply_to_message_id=message.id)
+                return
 
-ss = getenv("STRING")
-if ss is not None:
-    acc = Client("myacc", api_id=api_id, api_hash=api_hash, session_string=ss)
-    acc.start()
-
-# Add proper exit condition to loops
-def wait_and_remove_file(filepath):
-    time.sleep(3)
-    while os.path.exists(filepath):
-        with open(filepath, "r") as file:
-            txt = file.read()
-        try:
-            os.remove(filepath)  # Remove file at the end
-            break  # Exit loop once file is removed
-        except Exception as e:
-            print(f"Error while removing file: {e}")
-        time.sleep(5)
-
-# Proper error handling and file closing
-def edit_message_safe(chat_id, message_id, text):
-    try:
-        bot.edit_message_text(chat_id, message_id, text)
-    except Exception as e:
-        print(f"Error editing message: {e}")
-
-# ... (Other functions remain unchanged) ...
-
-# Use this pattern for start command
-@bot.on_message(filters.command(["start"]))
-def send_start(client, message):
-    try:
-        bot.send_message(
-            message.chat.id,
-            f"**👋 Hi** **{message.from_user.mention}**, **I am Save Restricted Bot, I can send you restricted content by its post link**\n\n{USAGE}",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🌐 Update Channel", url="https://t.me/dummylazey")]]
-            ),
-            reply_to_message_id=message.id,
-        )
-    except Exception as e:
-        print(f"Error in start command: {e}")
-
-# ... (Other functions remain unchanged) ...
-
-# Implement proper error handling and file management in the handle_private function
-def handle_private(message, chat_id, msg_id):
-    try:
-        msg = acc.get_messages(chat_id, msg_id)
-        msg_type = get_message_type(msg)
-        # ... (Handle message types) ...
-        os.remove(file)  # Remove downloaded file
-        if os.path.exists(f'{message.id}upstatus.txt'):
-            os.remove(f'{message.id}upstatus.txt')
-        bot.delete_messages(message.chat.id, [smsg.id])
-    except Exception as e:
-        print(f"Error handling private message: {e}")
-
-# ... (Other functions remain unchanged) ...
-
-USAGE = """**FOR PUBLIC CHATS**
-... (Your usage instructions) ...
-"""
-
-# Use try-except to handle unexpected errors during bot execution
-try:
-    bot.run()
-except Exception as e:
-    print(f"Bot execution error: {e}")
+    # ...
