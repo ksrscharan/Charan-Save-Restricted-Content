@@ -156,7 +156,7 @@ def handle_private(message: pyrogram.types.messages_and_media.message.Message, c
 		dosta.start()
 		file = acc.download_media(msg, progress=progress, progress_args=[message,"down"])
 		os.remove(f'{message.id}downstatus.txt')
-        download_event.set()
+        	download_event.set()
 
 		upsta = threading.Thread(target=lambda:upstatus(f'{message.id}upstatus.txt',smsg),daemon=True)
 		upsta.start()
